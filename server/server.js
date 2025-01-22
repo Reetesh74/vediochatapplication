@@ -29,7 +29,7 @@ app.post("/createMeeting", (req, res) => {
   peers[roomId] = [];
   res.json({ roomId });
 });
-
+let producer;
 let worker;
 let router;
 let consumerTransport;
@@ -45,7 +45,7 @@ let consumers = [];
 const createWorker = async () => {
   worker = await mediasoup.createWorker({
     rtcMinPort: 2000,
-    rtcMaxPort: 2020,
+    rtcMaxPort: 2400,
   });
 
   console.log(`worker pid ${worker.pid}`);
@@ -96,22 +96,36 @@ connections.on("connection", async (socket) => {
   try {
     // Create a router for each connection if it doesn't exist
 
-    if (!router) {
-      router = await worker.createRouter({ mediaCodecs });
-      console.log("Router created successfully");
-    }
-    socket.on("getRtpCapabilities", (callback) => {
-      const rtpCapabilities = router.rtpCapabilities;
-      console.log("rtpCapabilities", rtpCapabilities);
-      callback({ rtpCapabilities });
-    });
+    // if (!router) {
+    //   router = await worker.createRouter({ mediaCodecs });
+    //   console.log("Router created successfully");
+    // }
+    // socket.on("getRtpCapabilities", (callback) => {
+    //   const rtpCapabilities = router.rtpCapabilities;
+    //   console.log("rtpCapabilities", rtpCapabilities);
+    //   callback({ rtpCapabilities });
+    // });
     // Emit connection success
     socket.emit("connection-success", {
       socketId: socket.id,
+      existsProducer: producer ? true : false,
     });
     socket.on("disconnect", () => {
       console.log("peer disconnected");
     });
+    socket.on("createRoom", async (callback) => {
+      if (router === undefined) {
+        router = await worker.createRouter({ mediaCodecs });
+        console.log("Router created successfully");
+      }
+      const rtpCapabilities = router.rtpCapabilities;
+      console.log("rrrrrrrrrrrrrrrrrrrr", rtpCapabilities);
+      callback({ rtpCapabilities });
+    });
+    const getRtpCapabilities = (callback) => {
+      const getRtpCapabilities = router.rtpCapabilities;
+      callback({ getRtpCapabilities });
+    };
     socket.on("createWebRtcTransport", async ({ sender }, callback) => {
       console.log(`Is this a sender request?${sender}`);
       if (sender) producerTransport = await createWebRtcTransport(callback);
@@ -169,7 +183,7 @@ connections.on("connection", async (socket) => {
             kind: consumer.kind,
             rtpParameters: consumer.rtpParameters,
           };
-          callback({params})
+          callback({ params });
         }
       } catch (error) {
         console.log(error.message);
@@ -180,55 +194,18 @@ connections.on("connection", async (socket) => {
         });
       }
     });
-    socket.on('consumer-resume',async()=>{
-      console.log('consumer resume')
+    socket.on("consumer-resume", async () => {
+      console.log("consumer resume");
       await consumer.resume();
-    })
-    // const createWebRtcTransport = async () => {
-    //   try {
-    //     const webRtcTransport_options = {
-    //       listenIps: [
-    //         {
-    //           ip: "127.0.0.1", // Localhost for testing, change to public IP in production
-    //           announcedIp: null, // Use this if you're running behind NAT (e.g., set to public IP)
-    //         },
-    //       ],
-    //       enableUdp: true,
-    //       enableTcp: true,
-    //       preferUdp: true,
-    //     };
+    });
 
-    //     let transport = await router.createWebRtcTransport(
-    //       webRtcTransport_options
-    //     );
-    //     transport.on("dtlsstatechange", (dtlsState) => {
-    //       if (dtlsState === "closed") {
-    //         transport.close();
-    //       }
-    //     });
-    //     transport.on("close", () => {
-    //       console.log("transport closed");
-    //     });
-    //     callback({
-    //       params: {
-    //         id: transport.id,
-    //         iceParameters: transport.iceParameters,
-    //         iceCandidates: transport.iceCandidates,
-    //         dtlsParameters: transport.dtlsParameters,
-    //       },
-    //     });
-    //     return transport
-    //   } catch (error) {
-    //     console.log(error);
-    //   }
-    // };
     const createWebRtcTransport = async (callback) => {
       try {
         const webRtcTransport_options = {
           listenIps: [
             {
-              ip: "127.0.0.1", // Localhost for testing, change to public IP in production
-              announcedIp: null, // Use this if you're running behind NAT (e.g., set to public IP)
+              ip: "192.168.210.101", // Localhost for testing, change to public IP in production
+              // announcedIp: null, // Use this if you're running behind NAT (e.g., set to public IP)
             },
           ],
           enableUdp: true,

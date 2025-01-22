@@ -7,15 +7,16 @@ const socket = io(SERVER_URL);
 let device;
 const ConferencePage = ({ roomId }) => {
   const [isStreaming, setIsStreaming] = useState(false);
-  const [rtpCapabilities, setRtpCapabilities] = useState(null);
+//   const [rtpCapabilities, setRtpCapabilities] = useState(null);
   // const [producerTransport,setProducerTransport]=useState(null)
   const videoRef = useRef(null);
   const remoteVideoRef = useRef(null);
-  
+  let isProducer = false;
   let producerTransport;
   let consumerTransport;
   let producer;
   let consumer;
+  let rtpCapabilities;
   let params = {
     // mediasoup params
     encodings: [
@@ -42,8 +43,12 @@ const ConferencePage = ({ roomId }) => {
   };
   useEffect(() => {
     // Listen for connection success
-    socket.on("connection-success", ({ socketId }) => {
-      console.log("Connected to server with socket ID:", socketId);
+    socket.on("connection-success", ({ socketId, existsProducer }) => {
+      console.log(
+        "Connected to server with socket ID:",
+        socketId,
+        existsProducer
+      );
     });
 
     // Clean up listener on unmount
@@ -51,13 +56,16 @@ const ConferencePage = ({ roomId }) => {
       socket.off("connection-success");
     };
   }, []);
-  const createDevice = async () => {
+  
+  const createDevice = async (rtpCapabilities) => {
+    debugger;
     try {
       device = new mediaSoupClient.Device();
       await device.load({
         routerRtpCapabilities: rtpCapabilities,
       });
       // setRtpCapabilities(rtpCapabilities);
+      goCreateTransport();
       console.log("rtp rtpCapabilities", rtpCapabilities);
     } catch (error) {
       console.log(error);
@@ -78,17 +86,42 @@ const ConferencePage = ({ roomId }) => {
       }
 
       setIsStreaming(true);
+      goConnect(true);
     } catch (error) {
       console.error("Error accessing user media:", error);
       alert("Unable to access webcam or microphone.");
     }
   };
+
+  const goConsume = () => {
+    debugger
+    goConnect(false);
+  };
+
+  const goConnect = (producerOrConsumer) => {
+    isProducer = producerOrConsumer;
+    device===undefined?getRtpCapabilities():goCreateTransport();
+  };
+
+  const goCreateTransport = () => {
+    debugger
+    isProducer ? createSendTransport() : createRecvTransport();
+  };
   const getRtpCapabilities = () => {
-    socket.emit("getRtpCapabilities", (data) => {
-      console.log(`Router rtp Capabilitis...${data.rtpCapabilities}`);
-      setRtpCapabilities(data.rtpCapabilities);
+    socket.emit("createRoom", (data) => {
+    //   const { rtpCapabilities } = data;
+      console.log("Received RTP Capabilities from server:", data);
+
+      if (!data.rtpCapabilities || !data.rtpCapabilities.codecs) {
+        console.error("Invalid RTP Capabilities received from server.");
+        return;
+      }
+
+    //   rtpCapabilities = data.rtpCapabilities;
+      createDevice(data.rtpCapabilities);
     });
   };
+
   const createSendTransport = () => {
     socket.emit("createWebRtcTransport", { sender: true }, ({ params }) => {
       if (params.error) {
@@ -133,6 +166,7 @@ const ConferencePage = ({ roomId }) => {
           }
         }
       );
+      connectSendTransport();
     });
   };
   // const connectSendTransport =async ()=>{
@@ -207,35 +241,11 @@ const ConferencePage = ({ roomId }) => {
             }
           }
         );
+        connectRecvTransport();
       }
     );
   };
-  // const connectRecvTransport = async () => {
-  //   await socket.emit(
-  //     "consume",
-  //     {
-  //       rtpCapabilities: device.rtpCapabilities,
-  //     },
-  //     async ({ params }) => {
-  //       if (params.error) {
-  //         console.log("Connect comsume");
-  //         return;
-  //       }
-  //       console.log(params);
-  //       consumer = await consumerTransport.consume({
-  //         id: params.id,
-  //         producerId: params.producerId,
-  //         kind: params.kind,
-  //         rtpParameters: params.rtpParameters,
-  //       });
-  //       const { track } = params;
-  //       if (remoteVideoRef.current) {
-  //         remoteVideoRef.current.srcObject = new MediaStream([track]);
-  //       }
-  //       socket.emit('consumer-resume')
-  //     }
-  //   );
-  // };
+
   const connectRecvTransport = async () => {
     socket.emit(
       "consume",
@@ -247,9 +257,9 @@ const ConferencePage = ({ roomId }) => {
           console.error("Error consuming:", params.error);
           return;
         }
-  
+
         console.log("Consumer params:", params);
-  
+
         try {
           // Create a consumer
           consumer = await consumerTransport.consume({
@@ -258,17 +268,17 @@ const ConferencePage = ({ roomId }) => {
             kind: params.kind,
             rtpParameters: params.rtpParameters,
           });
-  
+
           console.log("Consumer created:", consumer);
-  
+
           // Get the track from the consumer
           const { track } = consumer;
-  
+
           if (remoteVideoRef.current) {
             // Set the track to the remote video element
             remoteVideoRef.current.srcObject = new MediaStream([track]);
           }
-  
+
           // Notify the server to resume the consumer
           socket.emit("consumer-resume", { consumerId: consumer.id });
         } catch (error) {
@@ -277,12 +287,12 @@ const ConferencePage = ({ roomId }) => {
       }
     );
   };
-  
+
   return (
     <div>
       <h1>Conference Page</h1>
       {/* Button to start the video stream */}
-      {!isStreaming && (
+      {/* {!isStreaming && (
         <button onClick={startVideoStream}>Start Video Stream</button>
       )}
       <button onClick={getRtpCapabilities}>getRtpCapabilities</button>
@@ -290,8 +300,10 @@ const ConferencePage = ({ roomId }) => {
       <button onClick={createSendTransport}>createSendTransport</button>
       <button onClick={connectSendTransport}>connectSendTransport</button>
       <button onClick={createRecvTransport}>createRecvTransport</button>
-      <button onClick={connectRecvTransport}>connectRecvTransport</button>
+      <button onClick={connectRecvTransport}>connectRecvTransport</button> */}
       {/* Video element to display the local video stream */}
+      <button onClick={startVideoStream}>publicer</button>
+      <button onClick={goConsume}>consume</button>
       <div>
         <video
           ref={videoRef}
